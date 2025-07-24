@@ -9,6 +9,8 @@ import com.myintag.weatherapp.model.WeatherDetails
 import com.myintag.weatherapp.repository.WeatherRepository
 import com.myintag.weatherapp.utils.toDomain
 import com.myintag.weatherapp.utils.toWeatherDetails
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 
@@ -22,27 +24,33 @@ class WeatherRepositoryImpl @Inject constructor(
     private val cacheExpiryMillis = 2 * 60_000L // 2 minute
 
     override suspend fun getLocationByCity(city: String): Location? {
-        return getCityLocation(city)
+        return withContext(Dispatchers.IO) { getCityLocation(city) }
     }
 
     override suspend fun getCityByCoordinates(lat: Double, lon: Double): Location? {
-        val result = geocodingApi.getCityByCoordinates(lat, lon, apiKey = apiKey)
-        val dto = result.firstOrNull() ?: return null
-        return dto.toDomain()
+        return withContext(Dispatchers.IO) {
+            val result = geocodingApi.getCityByCoordinates(lat, lon, apiKey = apiKey)
+            val dto = result.firstOrNull() ?: return@withContext null
+            dto.toDomain()
+        }
     }
 
     override suspend fun getWeekForecast(lat: Double, lon: Double): List<DailyForecast> {
-        return getWeather(lat, lon).daily?.map { it.toDomain() } ?: emptyList()
+        return withContext(Dispatchers.IO) {
+            getWeather(lat, lon).daily?.map { it.toDomain() } ?: emptyList()
+        }
     }
 
     override suspend fun getWeatherDetails(lat: Double, lon: Double, dayTimestamp: Long): WeatherDetails? {
-        val weatherResponse = getWeather(lat, lon)
-        val day = weatherResponse.daily?.find { it.dt == dayTimestamp } ?: return null
-        // Filter hourly data for the selected day
-        val hourlyList = weatherResponse.hourly
-            ?.filter { it.dt >= dayTimestamp && it.dt < dayTimestamp + 86400 } // 24x3600 seconds for a day
-            ?.map { it.toDomain() }
-        return day.toWeatherDetails(hourly = hourlyList)
+        return withContext(Dispatchers.IO) {
+            val weatherResponse = getWeather(lat, lon)
+            val day = weatherResponse.daily?.find { it.dt == dayTimestamp } ?: return@withContext null
+            // Filter hourly data for the selected day
+            val hourlyList = weatherResponse.hourly
+                ?.filter { it.dt >= dayTimestamp && it.dt < dayTimestamp + 86400 } // 24x3600 seconds for a day
+                ?.map { it.toDomain() }
+            day.toWeatherDetails(hourly = hourlyList)
+        }
     }
 
     private suspend fun getCityLocation(city: String): Location? {
